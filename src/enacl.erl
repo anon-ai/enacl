@@ -45,6 +45,7 @@
 %% Secret key crypto
 -export([
          secretbox_key_size/0,
+         secretbox_mac_size/0,
          secretbox_nonce_size/0,
          secretbox/3,
          secretbox_open/3,
@@ -280,7 +281,7 @@ unsafe_memzero(_) ->
     error(badarg).
 
 
-%% @doc generichash/3 creates a hash of the message using a key. 
+%% @doc generichash/3 creates a hash of the message using a key.
 %%
 %% This function generates a hash of the message using a key. The hash size is
 %% either 16, 32 or 64 bytes
@@ -636,6 +637,14 @@ secretbox_nonce_size() ->
 %% @end
 secretbox_key_size() ->
     enacl_nif:crypto_secretbox_KEYBYTES().
+
+%% @doc secretbox_mac_size/0 returns the size of the secretbox mac
+%%
+%% When encrypting with a secretbox, the resulting ciphertext is
+%% message_size + `secretbox_mac_size()' bytes.
+%% @end
+secretbox_mac_size() ->
+    enacl_nif:crypto_secretbox_MACBYTES().
 
 %% @doc stream_chacha20_nonce_size/0 returns the byte size of the nonce for streams
 %% @end

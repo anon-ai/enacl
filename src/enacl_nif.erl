@@ -43,6 +43,7 @@
 -export([
          crypto_secretbox_BOXZEROBYTES/0,
          crypto_secretbox_KEYBYTES/0,
+         crypto_secretbox_MACBYTES/0,
          crypto_secretbox_NONCEBYTES/0,
          crypto_secretbox_ZEROBYTES/0,
 
@@ -180,8 +181,8 @@ crypto_generichash(_HashSize, _Message, _Key) -> erlang:nif_error(nif_not_loaded
 crypto_generichash_init(_HashSize, _Key) ->  erlang:nif_error(nif_not_loaded).
 crypto_generichash_update(_HashSize, _HashState, _Message) ->  erlang:nif_error(nif_not_loaded).
 crypto_generichash_final(_HashSize, _HashState) ->  erlang:nif_error(nif_not_loaded).
-    
-    
+
+
 
 crypto_pwhash(_Password, _Salt) -> erlang:nif_error(nif_not_loaded).
 crypto_pwhash_str(_Password) -> erlang:nif_error(nif_not_loaded).
@@ -222,6 +223,7 @@ crypto_box_SEALBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_secretbox_NONCEBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_secretbox_ZEROBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_secretbox_KEYBYTES() -> erlang:nif_error(nif_not_loaded).
+crypto_secretbox_MACBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_secretbox_BOXZEROBYTES() -> erlang:nif_error(nif_not_loaded).
 
 crypto_secretbox(_Msg, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
