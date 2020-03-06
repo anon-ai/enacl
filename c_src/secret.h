@@ -7,6 +7,9 @@ ERL_NIF_TERM enacl_crypto_secretbox_NONCEBYTES(ErlNifEnv *env, int argc,
 ERL_NIF_TERM enacl_crypto_secretbox_KEYBYTES(ErlNifEnv *env, int argc,
                                              ERL_NIF_TERM const argv[]);
 
+ERL_NIF_TERM enacl_crypto_secretbox_MACBYTES(ErlNifEnv *env, int argc,
+                                             ERL_NIF_TERM const argv[]);
+
 ERL_NIF_TERM enacl_crypto_secretbox_ZEROBYTES(ErlNifEnv *env, int argc,
                                               ERL_NIF_TERM const argv[]);
 

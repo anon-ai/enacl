@@ -226,7 +226,6 @@ static ErlNifFunc nif_funcs[] = {
                                       enacl_crypto_box_seal_open),
 
     {"crypto_secretbox_NONCEBYTES", 0, enacl_crypto_secretbox_NONCEBYTES},
-    {"crypto_secretbox_b", 3, enif_crypto_secretbox},
     {"crypto_secretbox_ZEROBYTES", 0, enacl_crypto_secretbox_ZEROBYTES},
     {"crypto_secretbox_BOXZEROBYTES", 0, enacl_crypto_secretbox_BOXZEROBYTES},
     {"crypto_secretbox_KEYBYTES", 0, enacl_crypto_secretbox_KEYBYTES},
