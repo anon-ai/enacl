@@ -8,11 +8,14 @@
 %%% portable variant of the NaCl library. The C-level API is interchangeable so we can run
 %%% on any of these underlying libraries as seen from the Erlang world. We simply have to
 %%% restrict ourselves to the portion of the code base which is overlapping.</p>
-%%% <p><b>Warning:</b> The cryptographic strength of your implementation is no stronger than
-%%% plaintext cryptography unless you take care in using these primitives correctly. Hence,
-%%% implementors should use these primitives with that in mind.</p>
+%%% <p><b>Warning:</b> It is necessary to apply the primitives here correctly. Wrong
+%%% application may result in severely reduced strength of the cryptography. Take some
+%%% time to make sure this is the case before using.</p>
 %%% <p><b>Note:</b> All functions will fail with a `badarg' error if given incorrect
-%%% parameters.</p>
+%%% parameters. Also, if something is wrong internally, they will raise an error of
+%%% the form `enacl_internal_error'. There is usually no way to continue gracefully
+%%% from either of these. A third error is `enacl_finalized', raised when you try
+%%% re-using an already finalized state for multi-part messages.</p>
 %%% @end.
 -module(enacl).
 
@@ -25,21 +28,26 @@
          box_beforenm/2,
          box_afternm/3,
          box_open_afternm/3,
-         box_nonce_size/0,
-         box_public_key_bytes/0,
-         box_secret_key_bytes/0,
-         box_beforenm_bytes/0,
+         box_NONCEBYTES/0,
+         box_PUBLICKEYBYTES/0,
+         box_SECRETKEYBYTES/0,
+         box_BEFORENMBYTES/0,
 
-         %% EQC
-         sign_keypair_public_size/0,
-         sign_keypair_secret_size/0,
+         sign_PUBLICBYTES/0,
+         sign_SECRETBYTES/0,
+         sign_SEEDBYTES/0,
          sign_keypair/0,
+         sign_seed_keypair/1,
          sign/2,
          sign_open/2,
          sign_detached/2,
          sign_verify_detached/3,
 
-         %% EQC
+         sign_init/0,
+         sign_update/2,
+         sign_final_create/2,
+         sign_final_verify/3,
+
          box_seal/2,
          box_seal_open/3
 ]).
@@ -47,43 +55,50 @@
 %% Secret key crypto
 -export([
          %% EQC
-         secretbox_key_size/0,
-         secretbox_mac_size/0,
-         secretbox_nonce_size/0,
+         secretbox_KEYBYTES/0,
+         secretbox_MACBYTES/0,
+         secretbox_NONCEBYTES/0,
          secretbox/3,
          secretbox_open/3,
 
          %% No Tests!
-         stream_chacha20_key_size/0,
-         stream_chacha20_nonce_size/0,
+         stream_chacha20_KEYBYTES/0,
+         stream_chacha20_NONCEBYTES/0,
          stream_chacha20/3,
          stream_chacha20_xor/3,
 
          %% EQC
-         aead_chacha20poly1305_encrypt/4,
-         aead_chacha20poly1305_decrypt/4,
-         aead_chacha20poly1305_KEYBYTES/0,
-         aead_chacha20poly1305_NONCEBYTES/0,
-         aead_chacha20poly1305_ABYTES/0,
-         aead_chacha20poly1305_MESSAGEBYTES_MAX/0,
+         aead_chacha20poly1305_ietf_encrypt/4,
+         aead_chacha20poly1305_ietf_decrypt/4,
+         aead_chacha20poly1305_ietf_KEYBYTES/0,
+         aead_chacha20poly1305_ietf_NPUBBYTES/0,
+         aead_chacha20poly1305_ietf_ABYTES/0,
+         aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX/0,
+
+         aead_xchacha20poly1305_ietf_encrypt/4,
+         aead_xchacha20poly1305_ietf_decrypt/4,
+         aead_xchacha20poly1305_ietf_KEYBYTES/0,
+         aead_xchacha20poly1305_ietf_NPUBBYTES/0,
+         aead_xchacha20poly1305_ietf_ABYTES/0,
+         aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX/0,
 
          %% EQC
-         stream_key_size/0,
-         stream_nonce_size/0,
+         stream_KEYBYTES/0,
+         stream_NONCEBYTES/0,
          stream/3,
 
          %% No Tests!
          stream_xor/3,
 
          %% EQC
-         auth_key_size/0,
-         auth_size/0,
+         auth_KEYBYTES/0,
+         auth_BYTES/0,
          auth/2,
          auth_verify/3,
 
          %% EQC
-         onetime_auth_key_size/0,
-         onetime_auth_size/0,
+         onetime_auth_KEYBYTES/0,
+         onetime_auth_BYTES/0,
          onetime_auth/2,
          onetime_auth_verify/3
 ]).
@@ -97,12 +112,14 @@
          generichash_update/2,
          generichash_final/1,
 
-         %% No Tests!
+         %% EQC!
          shorthash_key_size/0,
          shorthash_size/0,
          shorthash/2,
 
-         %% EQC
+         pwhash/4,
+         pwhash_str/3,
+
          pwhash/2,
          pwhash_str/1,
          pwhash_str_verify/2
@@ -115,7 +132,7 @@
          hash/1,
          verify_16/2,
          verify_32/2,
-         
+
          %% No Tests!
          unsafe_memzero/1
 ]).
@@ -123,7 +140,9 @@
 %% Randomness
 -export([
          %% EQC
-         randombytes/1
+         randombytes/1,
+         randombytes_uint32/0,
+         randombytes_uniform/1
 ]).
 
 %%% Specific primitives
@@ -138,6 +157,7 @@
 -export([
          %% No Tests!
          crypto_sign_ed25519_keypair/0,
+         crypto_sign_ed25519_sk_to_pk/1,
          crypto_sign_ed25519_public_to_curve25519/1,
          crypto_sign_ed25519_secret_to_curve25519/1,
          crypto_sign_ed25519_public_size/0,
@@ -150,9 +170,9 @@
          kx_keypair/0,
          kx_client_session_keys/3,
          kx_server_session_keys/3,
-         kx_public_key_size/0,
-         kx_secret_key_size/0,
-         kx_session_key_size/0
+         kx_PUBLICKEYBYTES/0,
+         kx_SECRETKEYBYTES/0,
+         kx_SESSIONKEYBYTES/0
 ]).
 
 %% Internal verification of the system
@@ -173,9 +193,9 @@
 -define(SECRETBOX_OPEN_REDUCTIONS, 17 * 2).
 -define(STREAM_SIZE, 16 * 1024).
 -define(STREAM_REDUCTIONS, 17 * 2).
--define(AUTH_SIZE, 4 * 1024).
+-define(auth_BYTES, 4 * 1024).
 -define(AUTH_REDUCTIONS, 17 * 2).
--define(ONETIME_AUTH_SIZE, 16 * 1024).
+-define(ONETIME_auth_BYTES, 16 * 1024).
 -define(ONETIME_AUTH_REDUCTIONS, 16 * 2).
 -define(ED25519_PUBLIC_TO_CURVE_REDS, 20 * 2).
 -define(ED25519_SECRET_TO_CURVE_REDS, 20 * 2).
@@ -204,6 +224,9 @@
 -define(CRYPTO_GENERICHASH_KEYBYTES_MIN, 16).
 -define(CRYPTO_GENERICHASH_KEYBYTES_MAX, 64).
 -define(CRYPTO_GENERICHASH_KEYBYTES, 32).
+
+%% Size limits
+-define(MAX_32BIT_INT, 1 bsl 32).
 
 %% @doc Verify makes sure the constants defined in libsodium matches ours
 verify() ->
@@ -314,7 +337,7 @@ unsafe_memzero(_) ->
 %% either 16, 32 or 64 bytes
 %% @end
 -type generichash_bytes() :: 10..64.
--spec generichash(generichash_bytes(), iodata(), binary()) -> {ok, binary()} | {error, term()}.
+-spec generichash(generichash_bytes(), iodata(), binary()) -> binary().
 generichash(HashSize, Message, Key) ->
     enacl_nif:crypto_generichash(HashSize, Message, Key).
 
@@ -323,40 +346,72 @@ generichash(HashSize, Message, Key) ->
 %% This function generates a hash of the message. The hash size is
 %% either 16, 32 or 64 bytes
 %% @end
--spec generichash(generichash_bytes(), iodata()) -> {ok, binary()} | {error, term()}.
+-spec generichash(generichash_bytes(), iodata()) -> binary().
 generichash(HashSize, Message) ->
     enacl_nif:crypto_generichash(HashSize, Message, <<>>).
 
+%% @doc generichash_init/2 initializes a multi-part hash.
+%% @end
+-spec generichash_init(generichash_bytes(), binary()) -> reference().
 generichash_init(HashSize, Key) ->
     enacl_nif:crypto_generichash_init(HashSize, Key).
 
-generichash_update({hashstate, HashSize, HashState}, Message) ->
-    enacl_nif:crypto_generichash_update(HashSize, HashState, Message).
+%% @doc generichash_update/2 updates a multi-part hash with new data.
+%% @end
+-spec generichash_update(reference(), iodata()) -> reference().
+generichash_update(State, Message) ->
+    enacl_nif:crypto_generichash_update(State, Message).
 
-generichash_final({hashstate, HashSize, HashState}) ->
-    enacl_nif:crypto_generichash_final(HashSize, HashState).
+%% @doc generichash_final/1 finalizes a multi-part hash.
+-spec generichash_final(reference()) -> binary().
+generichash_final(State) ->
+    enacl_nif:crypto_generichash_final(State).
 
-
+-type pwhash_limit() :: interactive | moderate | sensitive | pos_integer().
 %% @doc pwhash/2 hash a password
 %%
 %% This function generates a fixed size salted hash of a user defined password.
+%% Defaults to interactive/interactive limits.
 %% @end
--spec pwhash(iodata(), binary()) -> {ok, binary()} | {error, term()}.
+-spec pwhash(iodata(), binary()) -> binary().
 pwhash(Password, Salt) ->
-    enacl_nif:crypto_pwhash(Password, Salt).
+    pwhash(Password, Salt, interactive, interactive).
+
+%% @doc pwhash/4 hash a password
+%%
+%% This function generates a fixed size salted hash of a user defined password given Ops and Mem
+%% limits.
+%% @end
+-spec pwhash(Password, Salt, Ops, Mem) -> binary()
+    when
+      Password :: iodata(),
+      Salt     :: binary(),
+      Ops      :: pwhash_limit(),
+      Mem      :: pwhash_limit().
+pwhash(Password, Salt, Ops, Mem) ->
+    enacl_nif:crypto_pwhash(Password, Salt, Ops, Mem).
 
 %% @doc pwhash_str/1 generates a ASCII encoded hash of a password
 %%
 %% This function generates a fixed size, salted, ASCII encoded hash of a user defined password.
+%% Defaults to interactive/interactive limits.
 %% @end
--spec pwhash_str(iodata()) -> {ok, iodata()} | {error, term()}.
+-spec pwhash_str(iodata()) -> iodata().
 pwhash_str(Password) ->
-    case enacl_nif:crypto_pwhash_str(Password) of
-        {ok, ASCII} ->
-            {ok, strip_null_terminate(ASCII)};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    pwhash_str(Password, interactive, interactive).
+
+%% @doc pwhash_str/3 generates a ASCII encoded hash of a password
+%%
+%% This function generates a fixed size, salted, ASCII encoded hash of a user defined password
+%% given Ops and Mem limits.
+%% @end
+-spec pwhash_str(Password, Ops, Mem) -> iodata()
+    when
+      Password :: iodata(),
+      Ops :: pwhash_limit(),
+      Mem :: pwhash_limit().
+pwhash_str(Password, Ops, Mem) ->
+    strip_null_terminate(enacl_nif:crypto_pwhash_str(Password, Ops, Mem)).
 
 strip_null_terminate(Binary) ->
     [X, _] = binary:split(Binary, <<0>>),
@@ -416,10 +471,7 @@ box(Msg, Nonce, PK, SK) ->
       SK :: binary(),
       Msg :: binary().
 box_open(CipherText, Nonce, PK, SK) ->
-    case enacl_nif:crypto_box_open([?P_BOXZEROBYTES, CipherText], Nonce, PK, SK) of
-        {error, Err} -> {error, Err};
-        Bin when is_binary(Bin) -> {ok, Bin}
-    end.
+    enacl_nif:crypto_box_open([?P_BOXZEROBYTES, CipherText], Nonce, PK, SK).
 
 %% @doc box_beforenm/2 precomputes a box shared key for a PK/SK keypair
 %% @end
@@ -468,51 +520,42 @@ box_afternm(Msg, Nonce, Key) ->
 box_open_afternm(CipherText, Nonce, Key) ->
     case iolist_size(CipherText) of
         K when K =< ?BOX_AFTERNM_SIZE ->
-            R =
-                case enacl_nif:crypto_box_open_afternm_b(
-                       [?P_BOXZEROBYTES, CipherText], Nonce, Key) of
-                    {error, Err} ->
-                        {error, Err};
-                    Bin when is_binary(Bin) ->
-                        {ok, Bin}
-                end,
+            R = enacl_nif:crypto_box_open_afternm_b([?P_BOXZEROBYTES, CipherText], Nonce, Key),
             bump(R, ?BOX_AFTERNM_REDUCTIONS, ?BOX_AFTERNM_SIZE, K);
         _ ->
-            case enacl_nif:crypto_box_open_afternm(
-                   [?P_BOXZEROBYTES, CipherText], Nonce, Key) of
-                {error, Err} ->
-                    {error, Err};
-                Bin when is_binary(Bin) ->
-                    {ok, Bin}
-            end
+            enacl_nif:crypto_box_open_afternm([?P_BOXZEROBYTES, CipherText], Nonce, Key)
     end.
 
-%% @doc box_nonce_size/0 return the byte-size of the nonce
+%% @doc box_NONCEBYTES()/0 return the byte-size of the nonce
 %%
 %% Used to obtain the size of the nonce.
 %% @end.
--spec box_nonce_size() -> pos_integer().
-box_nonce_size() ->
+-spec box_NONCEBYTES() -> pos_integer().
+box_NONCEBYTES() ->
     enacl_nif:crypto_box_NONCEBYTES().
 
 %% @private
--spec box_public_key_bytes() -> pos_integer().
-box_public_key_bytes() ->
+-spec box_PUBLICKEYBYTES() -> pos_integer().
+box_PUBLICKEYBYTES() ->
     enacl_nif:crypto_box_PUBLICKEYBYTES().
 
 %% @private
-box_beforenm_bytes() ->
+box_BEFORENMBYTES() ->
     enacl_nif:crypto_box_BEFORENMBYTES().
 
 %% Signatures
 
 %% @private
-sign_keypair_public_size() ->
+sign_PUBLICBYTES() ->
     enacl_nif:crypto_sign_PUBLICKEYBYTES().
 
 %% @private
-sign_keypair_secret_size() ->
+sign_SECRETBYTES() ->
     enacl_nif:crypto_sign_SECRETKEYBYTES().
+
+%% @private
+sign_SEEDBYTES() ->
+    enacl_nif:crypto_sign_SEEDBYTES().
 
 %% @doc sign_keypair/0 returns a signature keypair for signing
 %%
@@ -521,6 +564,17 @@ sign_keypair_secret_size() ->
 -spec sign_keypair() -> #{ atom() => binary() }.
 sign_keypair() ->
     {PK, SK} = enacl_nif:crypto_sign_keypair(),
+    #{ public => PK, secret => SK}.
+
+%% @doc sign_seed_keypair/1 returns a signature keypair based on seed for signing
+%%
+%% The returned value is a map in order to make it harder to misuse keys.
+%% @end
+-spec sign_seed_keypair(S) -> #{ atom() => binary() }
+    when
+	  S :: binary().
+sign_seed_keypair(S) ->
+    {PK, SK} = enacl_nif:crypto_sign_seed_keypair(S),
     #{ public => PK, secret => SK}.
 
 %% @doc sign/2 signs a message with a digital signature identified by a secret key.
@@ -547,10 +601,7 @@ sign(M, SK) ->
       PK :: binary(),
       M :: binary().
 sign_open(SM, PK) ->
-    case enacl_nif:crypto_sign_open(SM, PK) of
-        M when is_binary(M) -> {ok, M};
-        {error, Err} -> {error, Err}
-    end.
+    enacl_nif:crypto_sign_open(SM, PK).
 
 %% @doc sign_detached/2 computes a digital signature given a message and a secret key.
 %%
@@ -568,21 +619,59 @@ sign_detached(M, SK) ->
 %% message for the given public key.
 %%
 %% Given a signature `SIG', a message `M', and a public key `PK', the function computes
-%% true iff the `SIG' is valid for `M' and `PK'.
--spec sign_verify_detached(SIG, M, PK) -> {ok, M} | {error, failed_verification}
+%% true iff the `SIG' is valid for `M' and `PK'; false otherwise.
+-spec sign_verify_detached(SIG, M, PK) -> boolean()
     when
       SIG :: binary(),
       M   :: iodata(),
       PK  :: binary().
 sign_verify_detached(SIG, M, PK) ->
-    case enacl_nif:crypto_sign_verify_detached(SIG, M, PK) of
-        true -> {ok, M};
-        false -> {error, failed_verification}
-    end.
+    enacl_nif:crypto_sign_verify_detached(SIG, M, PK).
+
+-type sign_state() :: reference().
+
+%% @doc sign_init/0 initialize a multi-part signature state.
+%%
+%% This state must be passed to all future calls to `sign_update/2',
+%% `sign_final_create/2' and `sign_final_verify/3'.
+%% @end
+-spec sign_init() -> sign_state().
+sign_init() ->
+    enacl_nif:crypto_sign_init().
+
+%% @doc sign_update/2 update the signature state `S' with a new chunk of data `M'.
+%% @end
+-spec sign_update(S, M) -> sign_state() | {error, sign_update_error}
+    when S :: sign_state(),
+         M :: iodata().
+sign_update(SignState, M) ->
+    enacl_nif:crypto_sign_update(SignState, M).
+
+
+%% @doc sign_final_create/2 computes the signature for the previously supplied
+%% message(s) using the secret key `SK'.
+%% @end
+-spec sign_final_create(S, SK) -> {ok, binary()} | {error, atom()}
+    when S :: sign_state(),
+         SK :: iodata().
+sign_final_create(SignState, SK) ->
+    enacl_nif:crypto_sign_final_create(SignState, SK).
+
+%% @doc sign_final_verify/3 verify a chunked signature
+%%
+%% Verifies that `SIG' is a valid signature for the message whose content has
+%% been previously supplied using `sign_update/2' using the public key `PK.'
+%% @end
+-spec sign_final_verify(S, SIG, PK) -> boolean()
+    when S :: sign_state(),
+         SIG :: binary(),
+         PK :: iodata().
+sign_final_verify(SignState, SIG, PK) ->
+    enacl_nif:crypto_sign_final_verify(SignState, SIG, PK).
 
 %% @private
--spec box_secret_key_bytes() -> pos_integer().
-box_secret_key_bytes() ->
+-spec box_SECRETKEYBYTES() -> pos_integer().
+box_SECRETKEYBYTES() ->
     enacl_nif:crypto_box_SECRETKEYBYTES().
 
 %% @doc seal_box/2 encrypts an anonymous message to another party.
@@ -612,10 +701,7 @@ box_seal(Msg, PK) ->
       SK :: binary(),
       Msg :: binary().
 box_seal_open(SealedCipherText, PK, SK) ->
-    case enacl_nif:crypto_box_seal_open(SealedCipherText, PK, SK) of
-        {error, Err} -> {error, Err};
-        Bin when is_binary(Bin) -> {ok, Bin}
-    end.
+    enacl_nif:crypto_box_seal_open(SealedCipherText, PK, SK).
 
 %% @doc secretbox/3 encrypts a message with a key
 %%
@@ -652,51 +738,45 @@ secretbox(Msg, Nonce, Key) ->
 secretbox_open(CipherText, Nonce, Key) ->
     case iolist_size(CipherText) of
         K when K =< ?SECRETBOX_SIZE ->
-            R = case enacl_nif:crypto_secretbox_open_b([?S_BOXZEROBYTES, CipherText],
-                                                       Nonce, Key) of
-                    {error, Err} -> {error, Err};
-                    Bin when is_binary(Bin) -> {ok, Bin}
-                end,
+            R = enacl_nif:crypto_secretbox_open_b([?S_BOXZEROBYTES, CipherText],
+                                                       Nonce, Key),
             bump(R, ?SECRETBOX_OPEN_REDUCTIONS, ?SECRETBOX_SIZE, K);
         _ ->
-            case enacl_nif:crypto_secretbox_open([?S_BOXZEROBYTES, CipherText], Nonce, Key) of
-                {error, Err} -> {error, Err};
-                Bin when is_binary(Bin) -> {ok, Bin}
-            end
+            enacl_nif:crypto_secretbox_open([?S_BOXZEROBYTES, CipherText], Nonce, Key)
     end.
 
-%% @doc secretbox_nonce_size/0 returns the size of the secretbox nonce
+%% @doc secretbox_NONCEBYTES()/0 returns the size of the secretbox nonce
 %%
 %% When encrypting with a secretbox, the nonce must have this size
 %% @end
-secretbox_nonce_size() ->
+secretbox_NONCEBYTES() ->
     enacl_nif:crypto_secretbox_NONCEBYTES().
 
-%% @doc secretbox_key_size/0 returns the size of the secretbox key
+%% @doc secretbox_KEYBYTES/0 returns the size of the secretbox key
 %%
 %% When encrypting with a secretbox, the key must have this size
 %% @end
-secretbox_key_size() ->
+secretbox_KEYBYTES() ->
     enacl_nif:crypto_secretbox_KEYBYTES().
 
-%% @doc secretbox_mac_size/0 returns the size of the secretbox mac
+%% @doc secretbox_MACBYTES/0 returns the size of the secretbox mac
 %%
 %% When encrypting with a secretbox, the resulting ciphertext is
-%% message_size + `secretbox_mac_size()' bytes.
+%% message_size + `secretbox_MACBYTES()' bytes.
 %% @end
-secretbox_mac_size() ->
+secretbox_MACBYTES() ->
     enacl_nif:crypto_secretbox_MACBYTES().
 
-%% @doc stream_chacha20_nonce_size/0 returns the byte size of the nonce for streams
+%% @doc stream_chacha20_NONCEBYTES/0 returns the byte size of the nonce for streams
 %% @end
--spec stream_chacha20_nonce_size() -> ?CRYPTO_STREAM_CHACHA20_NONCEBYTES.
-stream_chacha20_nonce_size() ->
+-spec stream_chacha20_NONCEBYTES() -> ?CRYPTO_STREAM_CHACHA20_NONCEBYTES.
+stream_chacha20_NONCEBYTES() ->
     ?CRYPTO_STREAM_CHACHA20_NONCEBYTES.
 
-%% @doc stream_key_size/0 returns the byte size of the key for streams
+%% @doc stream_chacha20_KEYBYTES/0 returns the byte size of the key for streams
 %% @end
--spec stream_chacha20_key_size() -> ?CRYPTO_STREAM_CHACHA20_KEYBYTES.
-stream_chacha20_key_size() ->
+-spec stream_chacha20_KEYBYTES() -> ?CRYPTO_STREAM_CHACHA20_KEYBYTES.
+stream_chacha20_KEYBYTES() ->
     ?CRYPTO_STREAM_CHACHA20_KEYBYTES.
 
 %% @doc stream_chacha20/3 produces a cryptographic stream suitable for secret-key encryption
@@ -744,16 +824,16 @@ stream_chacha20_xor(Msg, Nonce, Key) ->
             enacl_nif:crypto_stream_chacha20_xor(Msg, Nonce, Key)
     end.
 
-%% @doc stream_nonce_size/0 returns the byte size of the nonce for streams
+%% @doc stream_NONCEBYTES/0 returns the byte size of the nonce for streams
 %% @end
--spec stream_nonce_size() -> ?CRYPTO_STREAM_NONCEBYTES.
-stream_nonce_size() ->
+-spec stream_NONCEBYTES() -> ?CRYPTO_STREAM_NONCEBYTES.
+stream_NONCEBYTES() ->
     ?CRYPTO_STREAM_NONCEBYTES.
 
-%% @doc stream_key_size/0 returns the byte size of the key for streams
+%% @doc stream_KEYBYTES/0 returns the byte size of the key for streams
 %% @end
--spec stream_key_size() -> ?CRYPTO_STREAM_KEYBYTES.
-stream_key_size() ->
+-spec stream_KEYBYTES() -> ?CRYPTO_STREAM_KEYBYTES.
+stream_KEYBYTES() ->
     ?CRYPTO_STREAM_KEYBYTES.
 
 %% @doc stream/3 produces a cryptographic stream suitable for secret-key encryption
@@ -801,16 +881,16 @@ stream_xor(Msg, Nonce, Key) ->
             enacl_nif:crypto_stream_xor(Msg, Nonce, Key)
     end.
 
-%% @doc auth_key_size/0 returns the byte-size of the authentication key
+%% @doc auth_KEYBYTES/0 returns the byte-size of the authentication key
 %% @end
--spec auth_key_size() -> pos_integer().
-auth_key_size() ->
+-spec auth_KEYBYTES() -> pos_integer().
+auth_KEYBYTES() ->
     enacl_nif:crypto_auth_KEYBYTES().
 
-%% @doc auth_size/0 returns the byte-size of the authenticator
+%% @doc auth_BYTES/0 returns the byte-size of the authenticator
 %% @end
--spec auth_size() -> pos_integer().
-auth_size() ->
+-spec auth_BYTES() -> pos_integer().
+auth_BYTES() ->
     enacl_nif:crypto_auth_BYTES().
 
 %% @doc auth/2 produces an authenticator (MAC) for a message
@@ -825,8 +905,8 @@ auth_size() ->
       Authenticator :: binary().
 auth(Msg, Key) ->
     case iolist_size(Msg) of
-      K when K =< ?AUTH_SIZE ->
-          bump(enacl_nif:crypto_auth_b(Msg, Key), ?AUTH_REDUCTIONS, ?AUTH_SIZE, K);
+      K when K =< ?auth_BYTES ->
+          bump(enacl_nif:crypto_auth_b(Msg, Key), ?AUTH_REDUCTIONS, ?auth_BYTES, K);
       _ ->
           enacl_nif:crypto_auth(Msg, Key)
   end.
@@ -843,10 +923,10 @@ auth(Msg, Key) ->
       Key :: binary().
 auth_verify(A, M, K) ->
     case iolist_size(M) of
-        K when K =< ?AUTH_SIZE ->
+        K when K =< ?auth_BYTES ->
             bump(enacl_nif:crypto_auth_verify_b(A, M, K),
                  ?AUTH_REDUCTIONS,
-                 ?AUTH_SIZE,
+                 ?auth_BYTES,
                  K);
         _ ->
             enacl_nif:crypto_auth_verify(A, M, K)
@@ -868,6 +948,10 @@ shorthash_size() ->
 %%
 %% Given a `Msg' and a `Key' produce a MAC/Authenticator for that message. The key can be reused for several such Msg/Authenticator pairs.
 %% An eavesdropper will not learn anything extra about the message structure.
+%%
+%% The intended use is to generate a random key and use it as a hash table or bloom filter function.
+%% This avoids an enemy their ability to predict where a collision would occur in the data structure,
+%% since they don't know the key.
 %% @end
 -spec shorthash(Msg, Key) -> Authenticator
     when
@@ -889,10 +973,10 @@ shorthash(Msg, Key) ->
       Authenticator :: binary().
 onetime_auth(Msg, Key) ->
     case iolist_size(Msg) of
-        K when K =< ?ONETIME_AUTH_SIZE ->
+        K when K =< ?ONETIME_auth_BYTES ->
             bump(enacl_nif:crypto_onetimeauth_b(Msg, Key),
                  ?ONETIME_AUTH_REDUCTIONS,
-                 ?ONETIME_AUTH_SIZE,
+                 ?ONETIME_auth_BYTES,
                  K);
         _ ->
             enacl_nif:crypto_onetimeauth(Msg, Key)
@@ -911,25 +995,25 @@ onetime_auth(Msg, Key) ->
       Key :: binary().
 onetime_auth_verify(A, M, K) ->
     case iolist_size(M) of
-        K when K =< ?ONETIME_AUTH_SIZE ->
+        K when K =< ?ONETIME_auth_BYTES ->
             bump(enacl_nif:crypto_onetimeauth_verify_b(A, M, K),
                  ?ONETIME_AUTH_REDUCTIONS,
-                 ?ONETIME_AUTH_SIZE,
+                 ?ONETIME_auth_BYTES,
                  K);
         _ ->
             enacl_nif:crypto_onetimeauth_verify(A, M, K)
     end.
 
-%% @doc onetime_auth_size/0 returns the number of bytes of the one-time authenticator
+%% @doc onetime_auth_BYTES/0 returns the number of bytes of the one-time authenticator
 %% @end
--spec onetime_auth_size() -> pos_integer().
-onetime_auth_size() ->
+-spec onetime_auth_BYTES() -> pos_integer().
+onetime_auth_BYTES() ->
     enacl_nif:crypto_onetimeauth_BYTES().
 
-%% @doc onetime_auth_key_size/0 returns the byte-size of the onetime authentication key
+%% @doc onetime_auth_KEYBYTES/0 returns the byte-size of the onetime authentication key
 %% @end
--spec onetime_auth_key_size() -> pos_integer().
-onetime_auth_key_size() ->
+-spec onetime_auth_KEYBYTES() -> pos_integer().
+onetime_auth_KEYBYTES() ->
     enacl_nif:crypto_onetimeauth_KEYBYTES().
 
 %% Curve 25519 Crypto
@@ -965,6 +1049,14 @@ curve25519_scalarmult_base(Secret) ->
 crypto_sign_ed25519_keypair() ->
     {PK, SK} = enacl_nif:crypto_sign_ed25519_keypair(),
     #{ public => PK, secret => SK }.
+
+%% @doc crypto_sign_ed25519_sk_to_pk/1 derives an ed25519 public key from a secret key
+%% The ed25519 signatures secret keys contains enough information to dervice its corresponding
+%% public key. This function extracts the public key from the secret if needed.
+%% @end
+-spec crypto_sign_ed25519_sk_to_pk(Secret :: binary()) -> binary().
+crypto_sign_ed25519_sk_to_pk(Secret) ->
+    enacl_nif:crypto_sign_ed25519_sk_to_pk(Secret).
 
 %% @doc crypto_sign_ed25519_public_to_curve25519/1 converts a given Ed 25519 public
 %% key to a Curve 25519 public key.
@@ -1035,22 +1127,22 @@ kx_server_session_keys(ServerPk, ServerSk, ClientPk) ->
     {Rx, Tx} = enacl_nif:crypto_kx_server_session_keys(ServerPk, ServerSk, ClientPk),
     #{ server_rx => Rx, server_tx => Tx}.
 
-%% @doc kx_session_key_size/0 returns the number of bytes of the generated during key exchange session key.
+%% @doc kx_SESSIONKEYBYTES/0 returns the number of bytes of the generated during key exchange session key.
 %% @end
--spec kx_session_key_size() -> pos_integer().
-kx_session_key_size() ->
+-spec kx_SESSIONKEYBYTES() -> pos_integer().
+kx_SESSIONKEYBYTES() ->
     enacl_nif:crypto_kx_SESSIONKEYBYTES().
 
-%% @doc kx_public_key_size/0 returns the number of bytes of the public key used in key exchange.
+%% @doc kx_PUBLICKEYBYTES/0 returns the number of bytes of the public key used in key exchange.
 %% @end
--spec kx_public_key_size() -> pos_integer().
-kx_public_key_size() ->
+-spec kx_PUBLICKEYBYTES() -> pos_integer().
+kx_PUBLICKEYBYTES() ->
     enacl_nif:crypto_kx_PUBLICKEYBYTES().
 
-%% @doc kx_secret_key_size/0 returns the number of bytes of the secret key used in key exchange.
+%% @doc kx_SECRETKEYBYTES/0 returns the number of bytes of the secret key used in key exchange.
 %% @end
--spec kx_secret_key_size() -> pos_integer().
-kx_secret_key_size() ->
+-spec kx_SECRETKEYBYTES() -> pos_integer().
+kx_SECRETKEYBYTES() ->
     enacl_nif:crypto_kx_SECRETKEYBYTES().
 
 %% AEAD ChaCha20 Poly1305
@@ -1059,56 +1151,109 @@ kx_secret_key_size() ->
 %% `AD' using `Key' and `Nonce'. Returns the encrypted message followed by
 %% `aead_chacha20poly1305_ABYTES/0' bytes of MAC.
 %% @end
--spec aead_chacha20poly1305_encrypt(Key, Nonce, AD, Msg) -> binary() | {error, term()}
+-spec aead_chacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key) -> binary()
     when Key :: binary(),
-         Nonce :: pos_integer(),
+         Nonce :: binary(),
          AD :: binary(),
          Msg :: binary().
-aead_chacha20poly1305_encrypt(Key, Nonce, AD, Msg) ->
-    NonceBin = <<0:32, Nonce:64/little-unsigned-integer>>,
-    enacl_nif:crypto_aead_chacha20poly1305_encrypt(Key, NonceBin, AD, Msg).
+aead_chacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key) ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key).
 
 %% @doc aead_chacha20poly1305_decrypt/4 decrypts ciphertext `CT' with additional
 %% data `AD' using `Key' and `Nonce'. Note: `CipherText' should contain
 %% `aead_chacha20poly1305_ABYTES/0' bytes that is the MAC. Returns the decrypted
 %% message.
 %% @end
--spec aead_chacha20poly1305_decrypt(Key, Nonce, AD, CT) -> binary() | {error, term()}
+-spec aead_chacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key) -> binary() | {error, term()}
     when Key :: binary(),
-         Nonce :: pos_integer(),
+         Nonce :: binary(),
          AD :: binary(),
          CT :: binary().
-aead_chacha20poly1305_decrypt(Key, Nonce, AD, CT) ->
-    NonceBin = <<0:32, Nonce:64/little-unsigned-integer>>,
-    enacl_nif:crypto_aead_chacha20poly1305_decrypt(Key, NonceBin, AD, CT).
+aead_chacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key) ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key).
 
 %% @doc aead_chacha20poly1305_KEYBYTES/0 returns the number of bytes
 %% of the key used in AEAD ChaCha20 Poly1305 encryption/decryption.
 %% @end
--spec aead_chacha20poly1305_KEYBYTES() -> pos_integer().
-aead_chacha20poly1305_KEYBYTES() ->
-    enacl_nif:crypto_aead_chacha20poly1305_KEYBYTES().
+-spec aead_chacha20poly1305_ietf_KEYBYTES() -> pos_integer().
+aead_chacha20poly1305_ietf_KEYBYTES() ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_KEYBYTES().
 
-%% @doc aead_chacha20poly1305_NONCEBYTES/0 returns the number of bytes
+%% @doc aead_chacha20poly1305_NPUBBYTES/0 returns the number of bytes
 %% of the Nonce in AEAD ChaCha20 Poly1305 encryption/decryption.
 %% @end
--spec aead_chacha20poly1305_NONCEBYTES() -> pos_integer().
-aead_chacha20poly1305_NONCEBYTES() ->
-    enacl_nif:crypto_aead_chacha20poly1305_NPUBBYTES().
+-spec aead_chacha20poly1305_ietf_NPUBBYTES() -> pos_integer().
+aead_chacha20poly1305_ietf_NPUBBYTES() ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_NPUBBYTES().
 
 %% @doc aead_chacha20poly1305_ABYTES/0 returns the number of bytes
 %% of the MAC in AEAD ChaCha20 Poly1305 encryption/decryption.
 %% @end
--spec aead_chacha20poly1305_ABYTES() -> pos_integer().
-aead_chacha20poly1305_ABYTES() ->
-    enacl_nif:crypto_aead_chacha20poly1305_ABYTES().
+-spec aead_chacha20poly1305_ietf_ABYTES() -> pos_integer().
+aead_chacha20poly1305_ietf_ABYTES() ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_ABYTES().
 
 %% @doc aead_chacha20poly1305_MESSAGEBYTES_MAX/0 returns the max number of bytes
 %% allowed in a message in AEAD ChaCha20 Poly1305 encryption/decryption.
 %% @end
--spec aead_chacha20poly1305_MESSAGEBYTES_MAX() -> pos_integer().
-aead_chacha20poly1305_MESSAGEBYTES_MAX() ->
-    enacl_nif:crypto_aead_chacha20poly1305_MESSAGEBYTES_MAX().
+-spec aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX() -> pos_integer().
+aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX() ->
+    enacl_nif:crypto_aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX().
+
+%% AEAD XChaCha20 Poly1305
+%% ----------------------
+%% @doc aead_xchacha20poly1305_encrypt/4 encrypts `Message' with additional data
+%% `AD' using `Key' and `Nonce'. Returns the encrypted message followed by
+%% `aead_xchacha20poly1305_ABYTES/0' bytes of MAC.
+%% @end
+-spec aead_xchacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key) -> binary()
+    when Key :: binary(),
+         Nonce :: binary(),
+         AD :: binary(),
+         Msg :: binary().
+aead_xchacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key) ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_encrypt(Msg, AD, Nonce, Key).
+
+%% @doc aead_xchacha20poly1305_decrypt/4 decrypts ciphertext `CT' with additional
+%% data `AD' using `Key' and `Nonce'. Note: `CipherText' should contain
+%% `aead_xchacha20poly1305_ABYTES/0' bytes that is the MAC. Returns the decrypted
+%% message.
+%% @end
+-spec aead_xchacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key) -> binary() | {error, term()}
+    when Key :: binary(),
+         Nonce :: binary(),
+         AD :: binary(),
+         CT :: binary().
+aead_xchacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key) ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_decrypt(CT, AD, Nonce, Key).
+
+%% @doc aead_xchacha20poly1305_KEYBYTES/0 returns the number of bytes
+%% of the key used in AEAD XChaCha20 Poly1305 encryption/decryption.
+%% @end
+-spec aead_xchacha20poly1305_ietf_KEYBYTES() -> pos_integer().
+aead_xchacha20poly1305_ietf_KEYBYTES() ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_KEYBYTES().
+
+%% @doc aead_xchacha20poly1305_NPUBBYTES/0 returns the number of bytes
+%% of the Nonce in AEAD XChaCha20 Poly1305 encryption/decryption.
+%% @end
+-spec aead_xchacha20poly1305_ietf_NPUBBYTES() -> pos_integer().
+aead_xchacha20poly1305_ietf_NPUBBYTES() ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_NPUBBYTES().
+
+%% @doc aead_xchacha20poly1305_ABYTES/0 returns the number of bytes
+%% of the MAC in AEAD XChaCha20 Poly1305 encryption/decryption.
+%% @end
+-spec aead_xchacha20poly1305_ietf_ABYTES() -> pos_integer().
+aead_xchacha20poly1305_ietf_ABYTES() ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_ABYTES().
+
+%% @doc aead_xchacha20poly1305_MESSAGEBYTES_MAX/0 returns the max number of bytes
+%% allowed in a message in AEAD XChaCha20 Poly1305 encryption/decryption.
+%% @end
+-spec aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX() -> pos_integer().
+aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX() ->
+    enacl_nif:crypto_aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX().
 
 %% Obtaining random bytes
 
@@ -1127,6 +1272,18 @@ aead_chacha20poly1305_MESSAGEBYTES_MAX() ->
 -spec randombytes(non_neg_integer()) -> binary().
 randombytes(N) ->
     enacl_nif:randombytes(N).
+
+%% @doc randombytes_uint32/0 produces an integer in the 32bit range
+%% @end
+-spec randombytes_uint32() -> integer().
+randombytes_uint32() ->
+    enacl_nif:randombytes_uint32().
+
+%% @doc randombytes_uniform/1 produces a random integer in the space [0..N)
+%% That is with the upper bound excluded. Fails for integers above 32bit size
+%% @end
+randombytes_uniform(N) when N < ?MAX_32BIT_INT ->
+    enacl_nif:randombytes_uniform(N).
 
 %% Helpers
 

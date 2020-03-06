@@ -5,7 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0]
+
+### Compatibility
+- Some functions have been streamlined to badarg in certain cases where it made more
+  sense to do so than returning back an error to the caller.
+- Functions generally don't return error values for internal errors. They now raise
+  exceptions when this happens. If you can't allocate a binary, there is usually not
+  much the programmer can do with that information, sans crashing.
+- If you used `aead_chacha20poly1305_*` functions, please read through the changelog
+  carefully as we have made changes to these functions. TL;DR: look for
+  `aead_chacha20poly1305_ietf_*` but note it is *not* just a simple substitution
+  into your code.
+- The `kx` constants have been renamed to follow libsodium one-to-one.
+- All calls with `verify` now returns booleans. See `sign_verify_detached`, which
+  were changed by this.
+- Many constants were changed to their underlying libsodium names.
+
+### Removed
+- The functions of the form `aead_chacha20poly1305_*` were removed. They implement
+  the IETF variant, and the argument order for them were wrong. Also, they used
+  severely limited nonce values, which is somewhat dangerous. The `..._NONCEBYTES`
+  name was changed to the consistent `..._NPUBBYTES`.
+
+### Added
+- Added `aead_chacha20poly1305_ietf_*` variants.
+- Implement multipart signature support, by Garry Hill.
+- Implement enacl:crypto_sign_seed_keypair/1, by Ole Andre Birkedal.
+- Implement enacl:crypto_sign_ed25519_sk_to_pk/1, by an anonymous contribution.
+- Added AEAD XChaCha20-Poly1305 support, thanks to Github/ECrownofFire.
+- The Password Hash Generation functions now support memory and operations limits,
+  thanks to Github/ECrownofFire.
+- Implement enacl:randombytes_uint32/0. Returns a random 32bit unsigned
+  integer, by means of the underlying random source.
+- Implement enacl:randombytes_uniform/1. Takes up to a 32bit unsigned
+  integer and produces a uniform integer in the range [0..N). Note
+  that the implementation avoids the typical non-uniformness which
+  would be present on a modulus operation on the nearest power-of-two
+  integer.
+- Added Win32 build support (Tino Breddin)
+- Added a nix shell for easier development
+
+### Changed
+- Started a split the C code over multiple files for easier maintenance.
+- Rewrote the generichash routines to be more consistent. We are now more-or-less
+  following the style of the Erlang/OTP `crypto` library. While here, make sure
+  we clean up correctly and that we don't accidentally mis-ref-count data. The
+  code is a bit more goto heavy, but this style is surprisingly common in C code.
+- Use sodium's dynamic memory allocators. These guarantee 64bit alignment, and also
+  provide guard pages around the allocation, somewhat protecting it. It adds some
+  page table pressure compared to the current code, but is easier to maintain and
+  much cleaner code.
+- The code now rejects updates to generichash states which were already finalized.
+- We now track the desired outlen of a generichash operation in the opaque NIF
+  resource rather than on the Erlang side. This avoids some checks in the code,
+  and streamlines a good deal of the interface.
+- Split AEAD routines off from the main enacl_nif.c file
+- Renamed many routines from enif_* to enacl_*. This better reflects where they live
+  in the code base, and avoids pollution of the enif_* "namespace".
+- Split Sign Public Key routines from the rest. Modernize the handling of contexts.
+- The multi-part generic hash routines now follow the structure of the crypto
+  modules multi-part constructions in API and style.
+- The AEAD constructions have been streamlined so they follow the rules of libsodium
+  closer than before. In particular, some dead code has been removed as a result.
+- Constants are now named by their libsodium counterpart. This should make it easier
+  to find the correct names given the libsodium documentation.
+- Generichash now checks if a `_final` call has already happened and rejects further
+  hashing on the object. The rejection is an error: if you ever do this, your code
+  is definitely wrong and there is no recovery possible.
+
+### Fixed
+- Fix a resource leak in generichash/sign init/update/final.
+- Clang static analysis warnings (Thomas Arts).
+- Replace a constant 31 with a computation from libsodium (Thomas Arts, from a security review).
+- Some subtle memory leaks in the error path for kx operations were plugged.
+- The multi-part generichash interface is now properly process/thread safe.
+- The sign interface is now properly process/thread safe.
 
 ## [0.17.2]
 

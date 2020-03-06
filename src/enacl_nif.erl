@@ -25,14 +25,21 @@
 
          crypto_sign_PUBLICKEYBYTES/0,
          crypto_sign_SECRETKEYBYTES/0,
+         crypto_sign_SEEDBYTES/0,
 
          crypto_sign_keypair/0,
+         crypto_sign_seed_keypair/1,
 
          crypto_sign/2,
          crypto_sign_open/2,
 
          crypto_sign_detached/2,
          crypto_sign_verify_detached/3,
+
+         crypto_sign_init/0,
+         crypto_sign_update/2,
+         crypto_sign_final_create/2,
+         crypto_sign_final_verify/3,
 
          crypto_box_seal/2,
          crypto_box_seal_open/3,
@@ -68,12 +75,19 @@
          crypto_stream_xor/3,
          crypto_stream_xor_b/3,
 
-         crypto_aead_chacha20poly1305_encrypt/4,
-         crypto_aead_chacha20poly1305_decrypt/4,
-         crypto_aead_chacha20poly1305_KEYBYTES/0,
-         crypto_aead_chacha20poly1305_NPUBBYTES/0,
-         crypto_aead_chacha20poly1305_ABYTES/0,
-         crypto_aead_chacha20poly1305_MESSAGEBYTES_MAX/0,
+         crypto_aead_chacha20poly1305_ietf_encrypt/4,
+         crypto_aead_chacha20poly1305_ietf_decrypt/4,
+         crypto_aead_chacha20poly1305_ietf_KEYBYTES/0,
+         crypto_aead_chacha20poly1305_ietf_NPUBBYTES/0,
+         crypto_aead_chacha20poly1305_ietf_ABYTES/0,
+         crypto_aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX/0,
+
+         crypto_aead_xchacha20poly1305_ietf_encrypt/4,
+         crypto_aead_xchacha20poly1305_ietf_decrypt/4,
+         crypto_aead_xchacha20poly1305_ietf_KEYBYTES/0,
+         crypto_aead_xchacha20poly1305_ietf_NPUBBYTES/0,
+         crypto_aead_xchacha20poly1305_ietf_ABYTES/0,
+         crypto_aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX/0,
 
          crypto_auth_BYTES/0,
          crypto_auth_KEYBYTES/0,
@@ -106,6 +120,7 @@
 %% Ed 25519
 -export([
          crypto_sign_ed25519_keypair/0,
+         crypto_sign_ed25519_sk_to_pk/1,
          crypto_sign_ed25519_public_to_curve25519/1,
          crypto_sign_ed25519_secret_to_curve25519/1,
          crypto_sign_ed25519_PUBLICKEYBYTES/0,
@@ -133,8 +148,8 @@
 
 %% Password Hashing - Argon2 Algorithm
 -export([
-         crypto_pwhash/2,
-         crypto_pwhash_str/1,
+         crypto_pwhash/4,
+         crypto_pwhash_str/3,
          crypto_pwhash_str_verify/2
         ]).
 
@@ -148,13 +163,15 @@
          crypto_generichash_KEYBYTES_MAX/0,
          crypto_generichash/3,
          crypto_generichash_init/2,
-         crypto_generichash_update/3,
-         crypto_generichash_final/2
+         crypto_generichash_update/2,
+         crypto_generichash_final/1
         ]).
 
 %% Access to the RNG
 -export([
-         randombytes/1
+         randombytes/1,
+         randombytes_uint32/0,
+         randombytes_uniform/1
         ]).
 
 %% Undocumented features :>
@@ -186,11 +203,11 @@ crypto_generichash_KEYBYTES_MAX() -> erlang:nif_error(nif_not_loaded).
 crypto_generichash(_HashSize, _Message, _Key) -> erlang:nif_error(nif_not_loaded).
 
 crypto_generichash_init(_HashSize, _Key) ->  erlang:nif_error(nif_not_loaded).
-crypto_generichash_update(_HashSize, _HashState, _Message) ->  erlang:nif_error(nif_not_loaded).
-crypto_generichash_final(_HashSize, _HashState) ->  erlang:nif_error(nif_not_loaded).
+crypto_generichash_update(_HashState, _Message) ->  erlang:nif_error(nif_not_loaded).
+crypto_generichash_final(_HashState) ->  erlang:nif_error(nif_not_loaded).
 
-crypto_pwhash(_Password, _Salt) -> erlang:nif_error(nif_not_loaded).
-crypto_pwhash_str(_Password) -> erlang:nif_error(nif_not_loaded).
+crypto_pwhash(_Password, _Salt, _Ops, _Mem) -> erlang:nif_error(nif_not_loaded).
+crypto_pwhash_str(_Password, _Ops, _Mem) -> erlang:nif_error(nif_not_loaded).
 crypto_pwhash_str_verify(_HashedPassword, _Password) -> erlang:nif_error(nif_not_loaded).
 
 crypto_box_NONCEBYTES() -> erlang:nif_error(nif_not_loaded).
@@ -212,14 +229,21 @@ crypto_box_open_afternm_b(_CipherText, _Nonce, _K) -> erlang:nif_error(nif_not_l
 
 crypto_sign_PUBLICKEYBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_sign_SECRETKEYBYTES() -> erlang:nif_error(nif_not_loaded).
+crypto_sign_SEEDBYTES() -> erlang:nif_error(nif_not_loaded).
 
 crypto_sign_keypair() -> erlang:nif_error(nif_not_loaded).
+crypto_sign_seed_keypair(_S) -> erlang:nif_error(nif_not_loaded).
 crypto_sign(_M, _SK) -> erlang:nif_error(nif_not_loaded).
 crypto_sign_open(_SignedMessage, _PK) -> erlang:nif_error(nif_not_loaded).
 
 crypto_sign_detached(_M, _SK) -> erlang:nif_error(nif_not_loaded).
 
 crypto_sign_verify_detached(_Sig, _M, _PK) -> erlang:nif_error(nif_not_loaded).
+
+crypto_sign_init() -> erlang:nif_error(nif_not_loaded).
+crypto_sign_update(_S, _M) -> erlang:nif_error(nif_not_loaded).
+crypto_sign_final_create(_S, _SK) -> erlang:nif_error(nif_not_loaded).
+crypto_sign_final_verify(_S, _S, _PK) -> erlang:nif_error(nif_not_loaded).
 
 crypto_box_seal(_Msg, _PK) -> erlang:nif_error(nif_not_loaded).
 crypto_box_seal_open(_CipherText, _PK, _SK) -> erlang:nif_error(nif_not_loaded).
@@ -250,12 +274,19 @@ crypto_stream_b(_Bytes, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
 crypto_stream_xor(_M, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
 crypto_stream_xor_b(_M, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
 
-crypto_aead_chacha20poly1305_encrypt(_Key, _Nonce, _AD, _Message) -> erlang:nif_error(nif_not_loaded).
-crypto_aead_chacha20poly1305_decrypt(_Key, _Nonce, _AD, _Message) -> erlang:nif_error(nif_not_loaded).
-crypto_aead_chacha20poly1305_KEYBYTES()                           -> erlang:nif_error(nif_not_loaded).
-crypto_aead_chacha20poly1305_NPUBBYTES()                          -> erlang:nif_error(nif_not_loaded).
-crypto_aead_chacha20poly1305_ABYTES()                             -> erlang:nif_error(nif_not_loaded).
-crypto_aead_chacha20poly1305_MESSAGEBYTES_MAX()                   -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_encrypt(_Message, _AD, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_decrypt(_CipherText, _AD, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_KEYBYTES()                           -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_NPUBBYTES()                          -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_ABYTES()                             -> erlang:nif_error(nif_not_loaded).
+crypto_aead_chacha20poly1305_ietf_MESSAGEBYTES_MAX()                   -> erlang:nif_error(nif_not_loaded).
+
+crypto_aead_xchacha20poly1305_ietf_encrypt(_Message, _AD, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
+crypto_aead_xchacha20poly1305_ietf_decrypt(_CipherText, _AD, _Nonce, _Key) -> erlang:nif_error(nif_not_loaded).
+crypto_aead_xchacha20poly1305_ietf_KEYBYTES()                           -> erlang:nif_error(nif_not_loaded).
+crypto_aead_xchacha20poly1305_ietf_NPUBBYTES()                          -> erlang:nif_error(nif_not_loaded).
+crypto_aead_xchacha20poly1305_ietf_ABYTES()                             -> erlang:nif_error(nif_not_loaded).
+crypto_aead_xchacha20poly1305_ietf_MESSAGEBYTES_MAX()                   -> erlang:nif_error(nif_not_loaded).
 
 crypto_auth_BYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_auth_KEYBYTES() -> erlang:nif_error(nif_not_loaded).
@@ -279,6 +310,7 @@ crypto_curve25519_scalarmult(_Secret, _BasePoint) -> erlang:nif_error(nif_not_lo
 crypto_curve25519_scalarmult_base(_Secret) -> erlang:nif_error(nif_not_loaded).
 
 crypto_sign_ed25519_keypair() -> erlang:nif_error(nif_not_loaded).
+crypto_sign_ed25519_sk_to_pk(_SecretKey) -> erlang:nif_error(nif_not_loaded).
 crypto_sign_ed25519_public_to_curve25519(_PublicKey) -> erlang:nif_error(nif_not_loaded).
 crypto_sign_ed25519_secret_to_curve25519(_SecretKey) -> erlang:nif_error(nif_not_loaded).
 crypto_sign_ed25519_PUBLICKEYBYTES() -> erlang:nif_error(nif_not_loaded).
@@ -298,5 +330,7 @@ crypto_kx_PUBLICKEYBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_kx_SECRETKEYBYTES() -> erlang:nif_error(nif_not_loaded).
 
 randombytes(_RequestedSize) -> erlang:nif_error(nif_not_loaded).
+randombytes_uint32() -> erlang:nif_error(nif_not_loaded).
+randombytes_uniform(_UpperBound) -> erlang:nif_error(nif_not_loaded).
 
 scramble_block_16(_Block, _Key) -> erlang:nif_error(nif_not_loaded).
