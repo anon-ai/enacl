@@ -8,6 +8,7 @@
 #include "enacl_ext.h"
 #include "generichash.h"
 #include "hash.h"
+#include "kdf.h"
 #include "kx.h"
 #include "public.h"
 #include "pwhash.h"
@@ -332,6 +333,11 @@ static ErlNifFunc nif_funcs[] = {
     {"crypto_kx_PUBLICKEYBYTES", 0, enacl_crypto_kx_PUBLICKEYBYTES},
     {"crypto_kx_SECRETKEYBYTES", 0, enacl_crypto_kx_SECRETKEYBYTES},
     {"crypto_kx_SESSIONKEYBYTES", 0, enacl_crypto_kx_SESSIONKEYBYTES},
+
+    erl_nif_dirty_job_cpu_bound_macro("crypto_kdf_keygen", 1,
+                                      enacl_crypto_kdf_keygen),
+    erl_nif_dirty_job_cpu_bound_macro("crypto_kdf_derive_from_key", 4,
+                                      enacl_crypto_kdf_derive_from_key),
 
     {"scramble_block_16", 2, enif_scramble_block_16},
 

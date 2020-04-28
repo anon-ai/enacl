@@ -127,6 +127,12 @@
          crypto_sign_ed25519_SECRETKEYBYTES/0
         ]).
 
+%% Key derivation functions
+-export([
+         crypto_kdf_keygen/1,
+         crypto_kdf_derive_from_key/4
+        ]).
+
 %% Key exchange
 -export([
          crypto_kx_keypair/0,
@@ -348,6 +354,9 @@ crypto_sign_ed25519_public_to_curve25519(_PublicKey) -> erlang:nif_error(nif_not
 crypto_sign_ed25519_secret_to_curve25519(_SecretKey) -> erlang:nif_error(nif_not_loaded).
 crypto_sign_ed25519_PUBLICKEYBYTES() -> erlang:nif_error(nif_not_loaded).
 crypto_sign_ed25519_SECRETKEYBYTES() -> erlang:nif_error(nif_not_loaded).
+
+crypto_kdf_keygen(_Size) -> erlang:nif_error(nif_not_loaded).
+crypto_kdf_derive_from_key(_SubkeyId, _SubkeySize, _Context, _MasterKey) -> erlang:nif_error(nif_not_loaded).
 
 crypto_hash(Input) when is_binary(Input) -> erlang:nif_error(nif_not_loaded).
 crypto_hash_b(Input) when is_binary(Input) -> erlang:nif_error(nif_not_loaded).
