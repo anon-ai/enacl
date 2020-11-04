@@ -4,6 +4,7 @@
 
 #include "enacl.h"
 #include "kdf.h"
+#include <string.h>
 
 ERL_NIF_TERM enacl_crypto_kdf_keygen(ErlNifEnv *env, int argc,
                                      ERL_NIF_TERM const argv[]) {
